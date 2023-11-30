@@ -62,10 +62,10 @@ func main() {
 						file.Write([]byte("\" line=\""))
 						file.Write([]byte(strconv.Itoa(p.lineNumber)))
 						file.Write([]byte("\" message=\""))
-						file.Write([]byte(p.message))
+						file.Write([]byte(clenMessage(p.message)))
 						file.Write([]byte("\" severity=\"error\" source=\"nilaway\"/>\n"))
 					}
-					file.Write([]byte("</file>\n"))
+					file.Write([]byte("  </file>\n"))
 
 				}
 				file.Write([]byte("</checkstyle>\n"))
@@ -80,6 +80,16 @@ func main() {
 		panic(err)
 	}
 
+}
+
+func clenMessage(message string) string {
+	m0 := strings.ReplaceAll(message, "\n", "&#xA;")
+	m1 := strings.ReplaceAll(m0, "\r", "")
+	m2 := strings.ReplaceAll(m1, "\u001B[0m", "")  //remove ansi color reset
+	m3 := strings.ReplaceAll(m2, "\u001B[31m", "") //remove ansi color
+	m4 := strings.ReplaceAll(m3, "\u001B[95m", "") //remove ansi color
+	m5 := strings.ReplaceAll(m4, "\u003e", "")
+	return strings.ReplaceAll(m5, "\u001B[", "")
 }
 
 func findingFromPM(pm PosnMessage, currentWorkDirectory string) (*finding, error) {
