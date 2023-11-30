@@ -39,7 +39,9 @@ func main() {
 					for _, pm := range element.Nilaway {
 						if f, err := findingFromPM(pm, currentWorkDirectory); err == nil {
 							path := f.path
-							findings[path] = append(findings[path], f)
+							if !strings.HasPrefix(path, ".go-cache/") {
+								findings[path] = append(findings[path], f)
+							}
 						} else {
 							panic(err)
 						}
