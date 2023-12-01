@@ -89,7 +89,7 @@ func clenMessage(message string) string {
 	m3 := strings.ReplaceAll(m2, "\u001B[31m", "") //remove ansi color
 	m4 := strings.ReplaceAll(m3, "\u001B[95m", "") //remove ansi color
 	m5 := strings.ReplaceAll(m4, "\u003e", "")
-	return strings.ReplaceAll(m5, "\u001B[", "")
+	return strings.TrimPrefix(m5, "error: ")
 }
 
 func findingFromPM(pm PosnMessage, currentWorkDirectory string) (*finding, error) {
