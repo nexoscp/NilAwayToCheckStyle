@@ -69,6 +69,42 @@ func main() {
 
 				}
 				file.Write([]byte("</checkstyle>\n"))
+			} else {
+				panic(err)
+			}
+			// see https://docs.gitlab.com/ee/ci/testing/code_quality.html#implement-a-custom-tool
+			// see https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md
+			if file, err := os.Create("nilaway.codeclimate.json"); err == nil {
+				defer file.Close()
+				first := true
+				file.Write([]byte("[\n"))
+				for path, pm := range findings {
+					for _, p := range pm {
+						if first {
+							file.Write([]byte("  {\n"))
+							first = false
+						} else {
+							file.Write([]byte(",\n  {\n"))
+						}
+						file.Write([]byte("   \"description\": \""))
+						file.Write([]byte(clenMessage(p.message)))
+						file.Write([]byte("\",\n"))
+						file.Write([]byte("   \"check_name\": \"nil\",\n"))
+						file.Write([]byte("   \"fingerprint\": \"nilaway\",\n"))
+						file.Write([]byte("   \"severity\": \"critical\",\n"))
+						file.Write([]byte("   \"location\": {\n"))
+						file.Write([]byte("     \"path\": \""))
+						file.Write([]byte(path))
+						file.Write([]byte("\",\n"))
+						file.Write([]byte("      \"positions\": {\n        \"begin\": {\n          \"line\": \""))
+						file.Write([]byte(strconv.Itoa(p.lineNumber)))
+						file.Write([]byte("\",\n          \"column\": \""))
+						file.Write([]byte(strconv.Itoa(p.postition)))
+						file.Write([]byte("\"\n        }\n      }\n    }\n"))
+						file.Write([]byte("  }"))
+					}
+				}
+				file.Write([]byte("\n]\n"))
 				return
 			} else {
 				panic(err)
@@ -90,7 +126,8 @@ func clenMessage(message string) string {
 	m4 := strings.ReplaceAll(m3, "\u001B[36m", "") //remove ansi color
 	m5 := strings.ReplaceAll(m4, "\u001B[95m", "") //remove ansi color
 	m6 := strings.ReplaceAll(m5, "\u003e", "")
-	return strings.TrimPrefix(m6, "error: ")
+	m7 := strings.ReplaceAll(m6, "\u0009", "")
+	return strings.TrimPrefix(m7, "error: ")
 }
 
 func findingFromPM(pm PosnMessage, currentWorkDirectory string) (*finding, error) {
