@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type PosnMessage struct {
@@ -48,67 +51,10 @@ func main() {
 					}
 				}
 			}
-			if file, err := os.Create("nilaway.checkstyle.xml"); err == nil {
-				defer file.Close()
-				file.Write([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"))
-				file.Write([]byte(" <checkstyle version=\"5.0\">\n"))
-				for path, pm := range findings {
-					file.Write([]byte("  <file name=\""))
-					file.Write([]byte(path))
-					file.Write([]byte("\">\n"))
-					for _, p := range pm {
-						file.Write([]byte("   <error column=\""))
-						file.Write([]byte(strconv.Itoa(p.postition)))
-						file.Write([]byte("\" line=\""))
-						file.Write([]byte(strconv.Itoa(p.lineNumber)))
-						file.Write([]byte("\" message=\""))
-						file.Write([]byte(clenMessage(p.message)))
-						file.Write([]byte("\" severity=\"error\" source=\"nilaway\"/>\n"))
-					}
-					file.Write([]byte("  </file>\n"))
-
-				}
-				file.Write([]byte("</checkstyle>\n"))
-			} else {
-				panic(err)
-			}
-			// see https://docs.gitlab.com/ee/ci/testing/code_quality.html#implement-a-custom-tool
-			// see https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md
-			if file, err := os.Create("nilaway.codeclimate.json"); err == nil {
-				defer file.Close()
-				first := true
-				file.Write([]byte("[\n"))
-				for path, pm := range findings {
-					for _, p := range pm {
-						if first {
-							file.Write([]byte("  {\n"))
-							first = false
-						} else {
-							file.Write([]byte(",\n  {\n"))
-						}
-						file.Write([]byte("   \"description\": \""))
-						file.Write([]byte(clenMessage(p.message)))
-						file.Write([]byte("\",\n"))
-						file.Write([]byte("   \"check_name\": \"nil\",\n"))
-						file.Write([]byte("   \"fingerprint\": \"nilaway\",\n"))
-						file.Write([]byte("   \"severity\": \"critical\",\n"))
-						file.Write([]byte("   \"location\": {\n"))
-						file.Write([]byte("     \"path\": \""))
-						file.Write([]byte(path))
-						file.Write([]byte("\",\n"))
-						file.Write([]byte("      \"positions\": {\n        \"begin\": {\n          \"line\": \""))
-						file.Write([]byte(strconv.Itoa(p.lineNumber)))
-						file.Write([]byte("\",\n          \"column\": \""))
-						file.Write([]byte(strconv.Itoa(p.postition)))
-						file.Write([]byte("\"\n        }\n      }\n    }\n"))
-						file.Write([]byte("  }"))
-					}
-				}
-				file.Write([]byte("\n]\n"))
-				return
-			} else {
-				panic(err)
-			}
+			var wait sync.WaitGroup
+			go writeCheckStyle(findings, &wait)
+			go writeCodeClimate(findings, &wait)
+			wait.Wait()
 		} else {
 			panic(err)
 		}
@@ -118,7 +64,83 @@ func main() {
 
 }
 
-func clenMessage(message string) string {
+func writeCheckStyle(findings map[string][]*finding, wait *sync.WaitGroup) {
+	wait.Add(1)
+	defer wait.Done()
+	if file, err := os.Create("nilaway.checkstyle.xml"); err == nil {
+		defer file.Close()
+		file.Write([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"))
+		file.Write([]byte(" <checkstyle version=\"5.0\">\n"))
+		for path, pm := range findings {
+			file.Write([]byte("  <file name=\""))
+			file.Write([]byte(path))
+			file.Write([]byte("\">\n"))
+			for _, p := range pm {
+				file.Write([]byte("   <error column=\""))
+				file.Write([]byte(strconv.Itoa(p.postition)))
+				file.Write([]byte("\" line=\""))
+				file.Write([]byte(strconv.Itoa(p.lineNumber)))
+				file.Write([]byte("\" message=\""))
+				file.Write([]byte(cleanMessage(p.message)))
+				file.Write([]byte("\" severity=\"error\" source=\"nilaway\"/>\n"))
+			}
+			file.Write([]byte("  </file>\n"))
+
+		}
+		file.Write([]byte("</checkstyle>\n"))
+	} else {
+		panic(err)
+	}
+}
+
+// see https://docs.gitlab.com/ee/ci/testing/code_quality.html#implement-a-custom-tool
+// see https://github.com/codeclimate/platform/blob/master/spec/analyzers/SPEC.md
+func writeCodeClimate(findings map[string][]*finding, wait *sync.WaitGroup) {
+	wait.Add(1)
+	defer wait.Done()
+	if file, err := os.Create("nilaway.codeclimate.json"); err == nil {
+		defer file.Close()
+		first := true
+		file.Write([]byte("[\n"))
+		for path, pm := range findings {
+			for _, p := range pm {
+				lineNumber := strconv.Itoa(p.lineNumber)
+				linePosition := strconv.Itoa(p.postition)
+				hash := md5.Sum([]byte(path + ":" + lineNumber + ":" + linePosition))
+				hashhex := hex.EncodeToString(hash[:])
+				if first {
+					file.Write([]byte("  {\n"))
+					first = false
+				} else {
+					file.Write([]byte(",\n  {\n"))
+				}
+				file.Write([]byte("    \"type\": \"issue\",\n    \"categories\": [\"Bug Risk\"],\n    \"description\": \""))
+				file.Write([]byte(cleanMessage(p.message)))
+				file.Write([]byte("\",\n"))
+				file.Write([]byte("    \"check_name\": \"nil\",\n"))
+				file.Write([]byte("    \"fingerprint\": \""))
+				file.Write([]byte(hashhex))
+				file.Write([]byte("\",\n"))
+				file.Write([]byte("    \"severity\": \"critical\",\n"))
+				file.Write([]byte("    \"location\": {\n"))
+				file.Write([]byte("     \"path\": \""))
+				file.Write([]byte(path))
+				file.Write([]byte("\",\n"))
+				file.Write([]byte("      \"positions\": {\n        \"begin\": {\n          \"line\": \""))
+				file.Write([]byte(lineNumber))
+				file.Write([]byte("\",\n          \"column\": \""))
+				file.Write([]byte(linePosition))
+				file.Write([]byte("\"\n        }\n      }\n    }\n"))
+				file.Write([]byte("  }"))
+			}
+		}
+		file.Write([]byte("\n]\n"))
+	} else {
+		panic(err)
+	}
+}
+
+func cleanMessage(message string) string {
 	m0 := strings.ReplaceAll(message, "\n", "&#xA;")
 	m1 := strings.ReplaceAll(m0, "\r", "")
 	m2 := strings.ReplaceAll(m1, "\u001B[0m", "")  //remove ansi color reset
